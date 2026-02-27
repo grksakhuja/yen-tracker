@@ -2,149 +2,22 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type {
-  BandResult,
   ConversionDirection,
   ConversionRecord,
   Provider,
-  RateInfo,
+  RatesResponse,
   Settings,
+  ThermostatResponse,
+  ThermostatResult,
 } from '@/types';
-
-interface ThermostatResult {
-  band: string;
-  monthlyCap: number;
-  convertedThisMonth: number;
-  remainingBudget: number;
-  suggestedAmount: number;
-  suggestion: string;
-  atCap: boolean;
-  exposurePct: number;
-  overExposed: boolean;
-}
-
-interface ThermostatResponse {
-  thermostat: ThermostatResult;
-  rate: RateInfo;
-  band: BandResult;
-  fallback: boolean;
-}
-
-interface RatesResponse {
-  rate: RateInfo;
-  band: BandResult;
-  fallback: boolean;
-}
-
-interface PortfolioDisplay {
-  totalGbpConverted: number;
-  totalJpyAcquired: number;
-  weightedAvgRate: number;
-  currentValueGbp: number;
-  unrealisedPnlGbp: number;
-  unrealisedPnlPct: number;
-  conversionCount: number;
-}
-
-function formatGbp(pence: number): string {
-  return `\u00a3${(pence / 100).toLocaleString('en-GB', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function formatJpy(jpy: number): string {
-  return `\u00a5${jpy.toLocaleString()}`;
-}
-
-function formatRate(rate: number): string {
-  return rate.toFixed(2);
-}
-
-function bandColorClasses(band: string): string {
-  switch (band) {
-    case 'AGGRESSIVE_BUY':
-      return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-    case 'NORMAL_BUY':
-      return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    case 'HOLD':
-      return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-    case 'REVERSE':
-      return 'bg-red-500/20 text-red-400 border-red-500/30';
-    default:
-      return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-  }
-}
-
-function bandLabel(band: string): string {
-  switch (band) {
-    case 'AGGRESSIVE_BUY':
-      return 'Aggressive Buy';
-    case 'NORMAL_BUY':
-      return 'Normal Buy';
-    case 'HOLD':
-      return 'Hold';
-    case 'REVERSE':
-      return 'Reverse Zone';
-    default:
-      return band;
-  }
-}
-
-function calculatePortfolio(
-  conversions: ConversionRecord[],
-  currentRate: number
-): PortfolioDisplay {
-  const gbpToJpy = conversions.filter((c) => c.direction === 'GBP_TO_JPY');
-  const jpyToGbp = conversions.filter((c) => c.direction === 'JPY_TO_GBP');
-
-  const totalGbpConverted = gbpToJpy.reduce(
-    (sum, c) => sum + c.gbp_amount,
-    0
-  );
-  const gbpReceived = jpyToGbp.reduce((sum, c) => sum + c.gbp_amount, 0);
-  const netGbpDeployed = totalGbpConverted - gbpReceived;
-  const jpyAcquired = gbpToJpy.reduce((sum, c) => sum + c.jpy_amount, 0);
-  const jpyReturned = jpyToGbp.reduce((sum, c) => sum + c.jpy_amount, 0);
-  const totalJpyAcquired = jpyAcquired - jpyReturned;
-
-  let weightedAvgRate = 0;
-  if (gbpToJpy.length > 0) {
-    let totalWeighted = 0;
-    let totalGbp = 0;
-    for (const c of gbpToJpy) {
-      totalWeighted += c.exchange_rate * c.gbp_amount;
-      totalGbp += c.gbp_amount;
-    }
-    if (totalGbp > 0) {
-      weightedAvgRate = totalWeighted / totalGbp;
-    }
-  }
-
-  const currentValueGbp =
-    currentRate > 0 ? Math.round((totalJpyAcquired / currentRate) * 100) : 0;
-  const unrealisedPnlGbp = currentValueGbp - netGbpDeployed;
-  const unrealisedPnlPct =
-    netGbpDeployed > 0 ? (unrealisedPnlGbp / netGbpDeployed) * 100 : 0;
-
-  return {
-    totalGbpConverted,
-    totalJpyAcquired,
-    weightedAvgRate,
-    currentValueGbp,
-    unrealisedPnlGbp,
-    unrealisedPnlPct,
-    conversionCount: conversions.length,
-  };
-}
-
-function SkeletonCard() {
-  return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 animate-pulse">
-      <div className="h-4 bg-gray-800 rounded w-1/3 mb-3" />
-      <div className="h-8 bg-gray-800 rounded w-2/3" />
-    </div>
-  );
-}
+import { formatGBP, formatJPY, formatRate, calculateEffectiveRate } from '@/lib/finance/currency';
+import { getBandFullClasses, getBandLabel } from '@/lib/strategy/bands';
+import { calculatePortfolioSummary } from '@/lib/finance/pnl';
+import { useToast } from '@/hooks/useToast';
+import { Toast } from '@/components/ui/Toast';
+import { ErrorRetry } from '@/components/ui/ErrorRetry';
+import { SkeletonCard } from '@/components/ui/SkeletonCard';
+import { StatCard } from '@/components/ui/StatCard';
 
 export default function DashboardPage() {
   const [rates, setRates] = useState<RatesResponse | null>(null);
@@ -163,10 +36,7 @@ export default function DashboardPage() {
   const [provider, setProvider] = useState<Provider>('WISE');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [toast, setToast] = useState<{
-    type: 'success' | 'error';
-    message: string;
-  } | null>(null);
+  const [toast, setToast] = useToast();
 
   const fetchData = useCallback(async () => {
     try {
@@ -210,30 +80,13 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
-  // Auto-calculate JPY when GBP changes (or vice versa)
-  useEffect(() => {
-    if (!rates) return;
-    const rate = rates.rate.rate;
-
-    if (direction === 'GBP_TO_JPY' && gbpPounds) {
-      const pounds = parseFloat(gbpPounds);
-      if (!isNaN(pounds)) {
-        setJpyAmount(Math.round(pounds * rate).toString());
-      }
-    } else if (direction === 'JPY_TO_GBP' && jpyAmount) {
-      const jpy = parseFloat(jpyAmount);
-      if (!isNaN(jpy) && rate > 0) {
-        setGbpPounds((jpy / rate).toFixed(2));
-      }
-    }
-  }, [gbpPounds, jpyAmount, direction, rates]);
+  // Compute effective rate from manual amounts
+  const parsedPounds = parseFloat(gbpPounds);
+  const parsedJpy = parseFloat(jpyAmount);
+  const effectiveRate =
+    !isNaN(parsedPounds) && !isNaN(parsedJpy) && parsedPounds > 0 && parsedJpy > 0
+      ? parsedJpy / parsedPounds
+      : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -257,7 +110,7 @@ export default function DashboardPage() {
           direction,
           gbpPence: Math.round(pounds * 100),
           jpyAmount: Math.round(jpy),
-          rate: rates.rate.rate,
+          rate: jpy / pounds,
           spotRate: rates.rate.rate,
           provider,
           bandAtTime: rates.band?.band ?? null,
@@ -276,18 +129,8 @@ export default function DashboardPage() {
       setGbpPounds('');
       setJpyAmount('');
       setNotes('');
-      // Refresh conversions and thermostat
-      const [freshConversions, freshThermostat] = await Promise.all([
-        fetch('/api/conversions'),
-        fetch('/api/thermostat'),
-      ]);
-      if (freshConversions.ok) {
-        setConversions(await freshConversions.json());
-      }
-      if (freshThermostat.ok) {
-        const thermostatData = await freshThermostat.json() as ThermostatResponse;
-        setThermostat(thermostatData.thermostat);
-      }
+      // Refresh all data
+      await fetchData();
     } catch (err) {
       setToast({
         type: 'error',
@@ -300,42 +143,27 @@ export default function DashboardPage() {
 
   if (error && !rates) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="text-red-400 text-lg">Failed to load data</div>
-        <p className="text-gray-500 text-sm">{error}</p>
-        <button
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            fetchData();
-          }}
-          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorRetry
+        title="Failed to load data"
+        message={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+          fetchData();
+        }}
+      />
     );
   }
 
   const portfolio =
     conversions && rates
-      ? calculatePortfolio(conversions, rates.rate.rate)
+      ? calculatePortfolioSummary(conversions, rates.rate.rate)
       : null;
 
   return (
     <div className="space-y-8">
       {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl border text-sm font-medium shadow-lg transition-all ${
-            toast.type === 'success'
-              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-              : 'bg-red-500/20 border-red-500/30 text-red-400'
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
+      {toast && <Toast toast={toast} />}
 
       {/* Rate & Band Section */}
       {loading ? (
@@ -368,9 +196,9 @@ export default function DashboardPage() {
             <div>
               <div className="text-sm text-gray-500 mb-2">Strategy Band</div>
               <span
-                className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border ${bandColorClasses(rates.band.band)}`}
+                className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border ${getBandFullClasses(rates.band.band)}`}
               >
-                {bandLabel(rates.band.band)}
+                {getBandLabel(rates.band.band)}
               </span>
             </div>
             <p className="text-sm text-gray-400 mt-4">
@@ -488,18 +316,27 @@ export default function DashboardPage() {
               {submitting ? 'Logging...' : 'Log Conversion'}
             </button>
           </div>
+          {/* Effective Rate Display */}
+          {effectiveRate !== null && rates && (
+            <div className="mt-3 flex items-center gap-3 text-sm">
+              <span className="text-gray-500">Effective rate:</span>
+              <span className="font-mono font-semibold text-gray-200">{effectiveRate.toFixed(2)}</span>
+              {Math.abs(effectiveRate - rates.rate.rate) > 0.01 && (
+                <span className={`text-xs ${effectiveRate > rates.rate.rate ? 'text-emerald-400' : 'text-red-400'}`}>
+                  ({effectiveRate > rates.rate.rate ? '+' : ''}{(effectiveRate - rates.rate.rate).toFixed(2)} vs spot {formatRate(rates.rate.rate)})
+                </span>
+              )}
+            </div>
+          )}
           {/* Budget Warning */}
-          {thermostat && direction === 'GBP_TO_JPY' && gbpPounds && (() => {
-            const pence = Math.round(parseFloat(gbpPounds) * 100);
-            if (!isNaN(pence) && pence > 0 && pence > thermostat.remainingBudget && thermostat.monthlyCap > 0) {
-              return (
-                <div className="mt-3 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
-                  This conversion ({formatGbp(pence)}) would exceed your monthly remaining budget of {formatGbp(thermostat.remainingBudget)}
-                </div>
-              );
-            }
-            return null;
-          })()}
+          {thermostat && direction === 'GBP_TO_JPY' && gbpPounds &&
+            !isNaN(parsedPounds) && parsedPounds > 0 &&
+            Math.round(parsedPounds * 100) > thermostat.remainingBudget &&
+            thermostat.monthlyCap > 0 && (
+              <div className="mt-3 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
+                This conversion ({formatGBP(Math.round(parsedPounds * 100))}) would exceed your monthly remaining budget of {formatGBP(thermostat.remainingBudget)}
+              </div>
+            )}
         </form>
       </div>
 
@@ -549,10 +386,10 @@ export default function DashboardPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">
-                  {formatGbp(thermostat.convertedThisMonth)} of {formatGbp(thermostat.monthlyCap)} used
+                  {formatGBP(thermostat.convertedThisMonth)} of {formatGBP(thermostat.monthlyCap)} used
                 </span>
                 <span className="text-gray-500">
-                  {formatGbp(thermostat.remainingBudget)} remaining
+                  {formatGBP(thermostat.remainingBudget)} remaining
                 </span>
               </div>
               <p className="text-sm text-gray-400 mt-3">{thermostat.suggestion}</p>
@@ -604,11 +441,11 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Total GBP Converted"
-              value={formatGbp(portfolio.totalGbpConverted)}
+              value={formatGBP(portfolio.totalGbpConverted)}
             />
             <StatCard
               label="Total JPY Acquired"
-              value={formatJpy(portfolio.totalJpyAcquired)}
+              value={formatJPY(portfolio.totalJpyAcquired)}
             />
             <StatCard
               label="Weighted Avg Rate"
@@ -621,11 +458,11 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Current Value (GBP)"
-              value={formatGbp(portfolio.currentValueGbp)}
+              value={formatGBP(portfolio.currentValueGbp)}
             />
             <StatCard
               label="Unrealised P&L"
-              value={formatGbp(portfolio.unrealisedPnlGbp)}
+              value={formatGBP(portfolio.unrealisedPnlGbp)}
               color={
                 portfolio.unrealisedPnlGbp > 0
                   ? 'text-emerald-400'
@@ -656,8 +493,8 @@ export default function DashboardPage() {
                 label="Monthly Cap"
                 value={
                   rates?.band.band === 'AGGRESSIVE_BUY'
-                    ? formatGbp(settings.cap_aggressive_gbp)
-                    : formatGbp(settings.cap_normal_gbp)
+                    ? formatGBP(settings.cap_aggressive_gbp)
+                    : formatGBP(settings.cap_normal_gbp)
                 }
               />
             )}
@@ -667,29 +504,6 @@ export default function DashboardPage() {
             No conversion data available.
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  color,
-  mono,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div
-        className={`text-xl font-semibold ${mono ? 'font-mono' : ''} ${color ?? 'text-gray-100'}`}
-      >
-        {value}
       </div>
     </div>
   );

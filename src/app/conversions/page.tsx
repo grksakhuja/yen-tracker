@@ -2,51 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ConversionRecord } from '@/types';
-
-function formatGbp(pence: number): string {
-  return `\u00a3${(pence / 100).toLocaleString('en-GB', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function formatJpy(jpy: number): string {
-  return `\u00a5${jpy.toLocaleString()}`;
-}
-
-function formatRate(rate: number): string {
-  return rate.toFixed(2);
-}
-
-function bandLabel(band: string | null): string {
-  switch (band) {
-    case 'AGGRESSIVE_BUY':
-      return 'Aggressive Buy';
-    case 'NORMAL_BUY':
-      return 'Normal Buy';
-    case 'HOLD':
-      return 'Hold';
-    case 'REVERSE':
-      return 'Reverse Zone';
-    default:
-      return band ?? '--';
-  }
-}
-
-function bandBadgeClasses(band: string | null): string {
-  switch (band) {
-    case 'AGGRESSIVE_BUY':
-      return 'bg-emerald-500/20 text-emerald-400';
-    case 'NORMAL_BUY':
-      return 'bg-blue-500/20 text-blue-400';
-    case 'HOLD':
-      return 'bg-amber-500/20 text-amber-400';
-    case 'REVERSE':
-      return 'bg-red-500/20 text-red-400';
-    default:
-      return 'bg-gray-500/20 text-gray-400';
-  }
-}
+import { formatGBP, formatJPY, formatRate, calculateEffectiveRate } from '@/lib/finance/currency';
+import { getBandBadgeClasses, getBandLabel } from '@/lib/strategy/bands';
+import { ErrorRetry } from '@/components/ui/ErrorRetry';
 
 function directionLabel(direction: string): string {
   return direction === 'GBP_TO_JPY' ? 'GBP \u2192 JPY' : 'JPY \u2192 GBP';
@@ -128,6 +86,7 @@ export default function ConversionsPage() {
       setError('Failed to delete conversion');
     } finally {
       setDeleting(null);
+      setDeleteConfirm(null);
     }
   }
 
@@ -143,20 +102,15 @@ export default function ConversionsPage() {
 
   if (error && !conversions) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="text-red-400 text-lg">Failed to load conversions</div>
-        <p className="text-gray-500 text-sm">{error}</p>
-        <button
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            fetchConversions();
-          }}
-          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorRetry
+        title="Failed to load conversions"
+        message={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+          fetchConversions();
+        }}
+      />
     );
   }
 
@@ -212,7 +166,13 @@ export default function ConversionsPage() {
                     JPY
                   </th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rate
+                    Eff. Rate
+                  </th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Spot
+                  </th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Spread
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Provider
@@ -229,67 +189,84 @@ export default function ConversionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/50">
-                {conversions.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="hover:bg-gray-800/30 transition-colors"
-                  >
-                    <td className="px-4 py-3 font-mono text-gray-300">
-                      {c.date}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {directionLabel(c.direction)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-100">
-                      {formatGbp(c.gbp_amount)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-100">
-                      {formatJpy(c.jpy_amount)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-300">
-                      {formatRate(c.exchange_rate)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {c.provider ?? '--'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${bandBadgeClasses(c.band_at_time)}`}
-                      >
-                        {bandLabel(c.band_at_time)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">
-                      {c.notes ?? ''}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {deleteConfirm === c.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleDelete(c.id)}
-                            disabled={deleting === c.id}
-                            className="px-2 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 rounded text-xs font-medium transition-colors"
-                          >
-                            {deleting === c.id ? '...' : 'Confirm'}
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleteConfirm(c.id)}
-                          className="px-2 py-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded text-xs font-medium transition-colors"
+                {conversions.map((c) => {
+                  const effRate = calculateEffectiveRate(c.jpy_amount, c.gbp_amount);
+                  const spotRate = c.spot_rate;
+                  const spread = spotRate != null ? effRate - spotRate : null;
+                  return (
+                    <tr
+                      key={c.id}
+                      className="hover:bg-gray-800/30 transition-colors"
+                    >
+                      <td className="px-4 py-3 font-mono text-gray-300">
+                        {c.date}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">
+                        {directionLabel(c.direction)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-100">
+                        {formatGBP(c.gbp_amount)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-100">
+                        {formatJPY(c.jpy_amount)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-100">
+                        {formatRate(effRate)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-500">
+                        {spotRate != null ? formatRate(spotRate) : '--'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {spread != null && Math.abs(spread) >= 0.01 ? (
+                          <span className={`text-xs ${spread > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {spread > 0 ? '+' : ''}{spread.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-600">--</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">
+                        {c.provider ?? '--'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getBandBadgeClasses(c.band_at_time)}`}
                         >
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                          {getBandLabel(c.band_at_time)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">
+                        {c.notes ?? ''}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {deleteConfirm === c.id ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleDelete(c.id)}
+                              disabled={deleting === c.id}
+                              className="px-2 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 rounded text-xs font-medium transition-colors"
+                            >
+                              {deleting === c.id ? '...' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(null)}
+                              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirm(c.id)}
+                            className="px-2 py-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded text-xs font-medium transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

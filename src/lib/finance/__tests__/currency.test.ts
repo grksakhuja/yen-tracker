@@ -4,9 +4,10 @@ import {
   poundsToPence,
   formatGBP,
   formatJPY,
+  formatRate,
   convertGbpToJpy,
   convertJpyToGbp,
-  calculateFee,
+  calculateEffectiveRate,
 } from '@/lib/finance/currency';
 
 describe('penceToPounds', () => {
@@ -59,8 +60,41 @@ describe('convertJpyToGbp', () => {
   });
 });
 
-describe('calculateFee', () => {
-  it('calculates a percentage fee and rounds to integer', () => {
-    expect(calculateFee(100000, 0.5)).toBe(500);
+describe('formatRate', () => {
+  it('returns a string with 2 decimal places', () => {
+    expect(formatRate(190)).toBe('190.00');
+    expect(formatRate(190.123)).toBe('190.12');
+    expect(formatRate(190.999)).toBe('191.00');
   });
 });
+
+describe('formatJPY — edge cases', () => {
+  it('rounds a float input', () => {
+    expect(formatJPY(210000.7)).toBe('\u00A5210,001');
+    expect(formatJPY(210000.3)).toBe('\u00A5210,000');
+  });
+});
+
+describe('calculateEffectiveRate', () => {
+  it('calculates rate from JPY and GBP pence', () => {
+    // £1000 (100000 pence) -> 190000 JPY = rate 190
+    expect(calculateEffectiveRate(190000, 100000)).toBe(190);
+  });
+
+  it('returns 0 when gbpPence is zero (division by zero)', () => {
+    expect(calculateEffectiveRate(190000, 0)).toBe(0);
+  });
+});
+
+describe('penceToPounds — edge cases', () => {
+  it('handles floating point correctly (33 pence = 0.33)', () => {
+    expect(penceToPounds(33)).toBe(0.33);
+  });
+});
+
+describe('poundsToPence — edge cases', () => {
+  it('handles negative input', () => {
+    expect(poundsToPence(-5)).toBe(-500);
+  });
+});
+

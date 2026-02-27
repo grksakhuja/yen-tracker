@@ -32,6 +32,7 @@ export const settingsSchema = z
     scenario_base_rate: z.number().positive(),
     scenario_worst_rate: z.number().positive(),
     review_interval_days: z.number().int().min(1),
+    last_band_review: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD format').nullable().optional(),
   })
   .refine(
     (data) => data.hold_above < data.normal_above,

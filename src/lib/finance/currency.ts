@@ -12,7 +12,7 @@ export function formatGBP(pence: number): string {
 }
 
 export function formatJPY(jpy: number): string {
-  return `\u00A5${Math.round(jpy).toLocaleString('en-JP')}`;
+  return `\u00A5${Math.round(jpy).toLocaleString('ja-JP')}`;
 }
 
 export function formatRate(rate: number): string {
@@ -27,6 +27,6 @@ export function convertJpyToGbp(jpy: number, rate: number): number {
   return Math.round((jpy / rate) * 100);
 }
 
-export function calculateFee(amount: number, feePct: number): number {
-  return Math.round((amount * feePct) / 100);
+export function calculateEffectiveRate(jpyAmount: number, gbpPence: number): number {
+  return gbpPence > 0 ? jpyAmount / (gbpPence / 100) : 0;
 }

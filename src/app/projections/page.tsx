@@ -10,110 +10,17 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-
-// ── Types for API response ────────────────────────────────────────────
-
-interface ScenarioResult {
-  label: string;
-  rate: number;
-  totalJpyIfConvertNow: number;
-  monthlyJpyBudget: number;
-  jpyPerPound: number;
-}
-
-interface StrategyResult {
-  label: string;
-  description: string;
-  totalJpy: number;
-  avgRate: number;
-  riskLevel: string;
-}
-
-interface StrategyComparison {
-  lumpSum: StrategyResult;
-  monthlyDrip: StrategyResult;
-  thermostat: StrategyResult;
-}
-
-interface NisaYear {
-  year: number;
-  contributed: number;
-  growth: number;
-  totalValue: number;
-}
-
-interface NisaProjection {
-  years: NisaYear[];
-  totalContributed: number;
-  totalValue: number;
-  totalGrowth: number;
-  growthPct: number;
-}
-
-interface RateHistoryPoint {
-  date: string;
-  rate: number;
-}
-
-interface RateRange {
-  high: number;
-  low: number;
-  highDate: string;
-  lowDate: string;
-  current: number;
-  percentile: number;
-}
-
-interface PortfolioSummary {
-  totalGbpConverted: number;
-  netGbpDeployed: number;
-  totalJpyAcquired: number;
-  weightedAvgRate: number;
-  currentRate: number;
-  currentValueGbp: number;
-  unrealisedPnlGbp: number;
-  unrealisedPnlPct: number;
-  conversionCount: number;
-}
-
-interface ProjectionsData {
-  scenarios: {
-    best: ScenarioResult;
-    base: ScenarioResult;
-    worst: ScenarioResult;
-  };
-  breakEvenRate: number;
-  strategyComparison: StrategyComparison;
-  nisaProjection: NisaProjection;
-  rateHistory: RateHistoryPoint[];
-  range52Week: RateRange | null;
-  currentRate: number;
-  portfolio: PortfolioSummary;
-}
-
-// ── Formatters ────────────────────────────────────────────────────────
-
-function formatJpy(jpy: number): string {
-  return `\u00a5${jpy.toLocaleString()}`;
-}
-
-function formatRate(rate: number): string {
-  return rate.toFixed(2);
-}
-
-// ── Skeleton ──────────────────────────────────────────────────────────
-
-function SkeletonCard({ className = '' }: { className?: string }) {
-  return (
-    <div
-      className={`bg-gray-900 rounded-xl border border-gray-800 p-6 animate-pulse ${className}`}
-    >
-      <div className="h-4 bg-gray-800 rounded w-1/3 mb-3" />
-      <div className="h-8 bg-gray-800 rounded w-2/3 mb-2" />
-      <div className="h-4 bg-gray-800 rounded w-1/2" />
-    </div>
-  );
-}
+import type {
+  NisaProjection,
+  ProjectionsData,
+  RateHistoryPoint,
+  RateRange,
+  ScenarioResult,
+  StrategyResult,
+} from '@/types';
+import { formatJPY, formatRate } from '@/lib/finance/currency';
+import { ErrorRetry } from '@/components/ui/ErrorRetry';
+import { SkeletonCard } from '@/components/ui/SkeletonCard';
 
 // ── Main Page ─────────────────────────────────────────────────────────
 
@@ -152,20 +59,15 @@ export default function ProjectionsPage() {
 
   if (error && !data) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="text-red-400 text-lg">Failed to load projections</div>
-        <p className="text-gray-500 text-sm">{error}</p>
-        <button
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            fetchData();
-          }}
-          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorRetry
+        title="Failed to load projections"
+        message={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+          fetchData();
+        }}
+      />
     );
   }
 
@@ -202,7 +104,6 @@ export default function ProjectionsPage() {
     rateHistory,
     range52Week,
     currentRate,
-    portfolio,
   } = data;
 
   const inProfit = currentRate > breakEvenRate && breakEvenRate > 0;
@@ -421,7 +322,7 @@ function ScenarioCard({
       <div className="text-sm text-gray-400 mb-3">
         Your remaining GBP converts to{' '}
         <span className="font-mono font-semibold text-gray-200">
-          {formatJpy(scenario.totalJpyIfConvertNow)}
+          {formatJPY(scenario.totalJpyIfConvertNow)}
         </span>
       </div>
       <div className="text-sm text-gray-500">
@@ -473,7 +374,7 @@ function StrategyCard({
         <div className="flex justify-between text-sm">
           <span className="text-gray-500">Total JPY</span>
           <span className="font-mono font-semibold text-gray-200">
-            {formatJpy(strategy.totalJpy)}
+            {formatJPY(strategy.totalJpy)}
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -527,7 +428,7 @@ function NisaSection({ projection }: { projection: NisaProjection }) {
         <p className="text-sm text-gray-400">
           Contributing{' '}
           <span className="font-mono font-semibold text-gray-200">
-            {formatJpy(monthlyJpy)}
+            {formatJPY(monthlyJpy)}
           </span>
           /month at{' '}
           <span className="font-mono font-semibold text-gray-200">
@@ -546,7 +447,7 @@ function NisaSection({ projection }: { projection: NisaProjection }) {
           >
             <div className="text-xs text-gray-500 mb-1">Year {m.year}</div>
             <div className="text-xl font-mono font-bold text-gray-100">
-              {formatJpy(Math.round(m.totalValue))}
+              {formatJPY(Math.round(m.totalValue))}
             </div>
           </div>
         ))}
@@ -571,13 +472,13 @@ function NisaSection({ projection }: { projection: NisaProjection }) {
               >
                 <td className="py-2 font-mono text-gray-300">{y.year}</td>
                 <td className="py-2 text-right font-mono text-gray-400">
-                  {formatJpy(Math.round(y.contributed))}
+                  {formatJPY(Math.round(y.contributed))}
                 </td>
                 <td className="py-2 text-right font-mono text-emerald-400">
-                  {formatJpy(Math.round(y.growth))}
+                  {formatJPY(Math.round(y.growth))}
                 </td>
                 <td className="py-2 text-right font-mono font-semibold text-gray-200">
-                  {formatJpy(Math.round(y.totalValue))}
+                  {formatJPY(Math.round(y.totalValue))}
                 </td>
               </tr>
             ))}
@@ -590,13 +491,13 @@ function NisaSection({ projection }: { projection: NisaProjection }) {
         <div className="text-sm text-gray-400">
           Total contributed:{' '}
           <span className="font-mono font-semibold text-gray-200">
-            {formatJpy(Math.round(projection.totalContributed))}
+            {formatJPY(Math.round(projection.totalContributed))}
           </span>
         </div>
         <div className="text-sm text-gray-400">
           Total growth:{' '}
           <span className="font-mono font-semibold text-emerald-400">
-            {formatJpy(Math.round(projection.totalGrowth))} (
+            {formatJPY(Math.round(projection.totalGrowth))} (
             {projection.growthPct.toFixed(1)}%)
           </span>
         </div>

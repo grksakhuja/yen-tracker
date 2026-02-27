@@ -61,34 +61,48 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
 
     const data = result.data;
 
+    const updatePayload = {
+      aggressive_above: data.aggressive_above,
+      normal_above: data.normal_above,
+      hold_above: data.hold_above,
+      cap_aggressive_gbp: data.cap_aggressive_gbp,
+      cap_normal_gbp: data.cap_normal_gbp,
+      total_gbp_savings_pence: data.total_gbp_savings_pence,
+      max_fx_exposure_pct: data.max_fx_exposure_pct,
+      monthly_jpy_expenses: data.monthly_jpy_expenses,
+      monthly_jpy_salary_net: data.monthly_jpy_salary_net,
+      nisa_monthly_jpy: data.nisa_monthly_jpy,
+      nisa_return_pct: data.nisa_return_pct,
+      circuit_breaker_loss_pence: data.circuit_breaker_loss_pence,
+      gbp_safety_net_months: data.gbp_safety_net_months,
+      scenario_best_rate: data.scenario_best_rate,
+      scenario_base_rate: data.scenario_base_rate,
+      scenario_worst_rate: data.scenario_worst_rate,
+      review_interval_days: data.review_interval_days,
+      last_band_review: data.last_band_review ?? null,
+      updated_at: new Date().toISOString(),
+    };
+
     const updated = db
       .update(settings)
-      .set({
-        aggressive_above: data.aggressive_above,
-        normal_above: data.normal_above,
-        hold_above: data.hold_above,
-        cap_aggressive_gbp: data.cap_aggressive_gbp,
-        cap_normal_gbp: data.cap_normal_gbp,
-        total_gbp_savings_pence: data.total_gbp_savings_pence,
-        max_fx_exposure_pct: data.max_fx_exposure_pct,
-        monthly_jpy_expenses: data.monthly_jpy_expenses,
-        monthly_jpy_salary_net: data.monthly_jpy_salary_net,
-        nisa_monthly_jpy: data.nisa_monthly_jpy,
-        nisa_return_pct: data.nisa_return_pct,
-        circuit_breaker_loss_pence: data.circuit_breaker_loss_pence,
-        gbp_safety_net_months: data.gbp_safety_net_months,
-        scenario_best_rate: data.scenario_best_rate,
-        scenario_base_rate: data.scenario_base_rate,
-        scenario_worst_rate: data.scenario_worst_rate,
-        review_interval_days: data.review_interval_days,
-        updated_at: new Date().toISOString(),
-      })
+      .set(updatePayload)
       .where(eq(settings.id, 1))
       .returning()
       .get();
 
     if (!updated) {
-      return NextResponse.json({ error: 'Settings not found. Run GET /api/settings first to initialize.' }, { status: 404 });
+      // Auto-seed defaults if no row exists, then re-apply the update
+      db.insert(settings).values(SETTINGS_DEFAULTS).run();
+      const retried = db
+        .update(settings)
+        .set(updatePayload)
+        .where(eq(settings.id, 1))
+        .returning()
+        .get();
+      if (!retried) {
+        return NextResponse.json({ error: 'Failed to initialise settings' }, { status: 500 });
+      }
+      return NextResponse.json(retried);
     }
 
     return NextResponse.json(updated);

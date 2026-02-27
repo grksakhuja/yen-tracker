@@ -18,7 +18,6 @@ export interface BandThresholds {
   aggressiveAbove: number;
   normalAbove: number;
   holdAbove: number;
-  reverseBelow: number;
 }
 
 export interface BandResult {
@@ -62,6 +61,101 @@ export interface Settings {
   review_interval_days: number;
   updated_at: string;
 }
+
+export interface RatesResponse {
+  rate: RateInfo;
+  band: BandResult;
+  fallback: boolean;
+}
+
+export interface ThermostatResponse {
+  thermostat: ThermostatResult;
+  rate: RateInfo;
+  band: BandResult;
+  fallback: boolean;
+}
+
+export interface ThermostatResult {
+  band: Band;
+  monthlyCap: number;
+  convertedThisMonth: number;
+  remainingBudget: number;
+  suggestedAmount: number;
+  suggestion: string;
+  atCap: boolean;
+  exposurePct: number;
+  overExposed: boolean;
+}
+
+// ── Projection types ─────────────────────────────────────────────────
+
+export interface ScenarioResult {
+  label: string;
+  rate: number;
+  totalJpyIfConvertNow: number;
+  monthlyJpyBudget: number;
+  jpyPerPound: number;
+}
+
+export interface StrategyResult {
+  label: string;
+  description: string;
+  totalJpy: number;
+  avgRate: number;
+  riskLevel: string;
+}
+
+export interface StrategyComparison {
+  lumpSum: StrategyResult;
+  monthlyDrip: StrategyResult;
+  thermostat: StrategyResult;
+}
+
+export interface NisaYear {
+  year: number;
+  contributed: number;
+  growth: number;
+  totalValue: number;
+}
+
+export interface NisaProjection {
+  years: NisaYear[];
+  totalContributed: number;
+  totalValue: number;
+  totalGrowth: number;
+  growthPct: number;
+}
+
+export interface RateHistoryPoint {
+  date: string;
+  rate: number;
+}
+
+export interface RateRange {
+  high: number;
+  low: number;
+  highDate: string;
+  lowDate: string;
+  current: number;
+  percentile: number;
+}
+
+export interface ProjectionsData {
+  scenarios: {
+    best: ScenarioResult;
+    base: ScenarioResult;
+    worst: ScenarioResult;
+  };
+  breakEvenRate: number;
+  strategyComparison: StrategyComparison;
+  nisaProjection: NisaProjection;
+  rateHistory: RateHistoryPoint[];
+  range52Week: RateRange | null;
+  currentRate: number;
+  portfolio: PortfolioSummary;
+}
+
+// ── Conversion types ─────────────────────────────────────────────────
 
 export interface ConversionRecord {
   id: number;

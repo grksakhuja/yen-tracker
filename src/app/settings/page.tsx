@@ -2,14 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Settings } from '@/types';
+import { penceToPounds, poundsToPence } from '@/lib/finance/currency';
+import { settingsSchema } from '@/lib/validators';
+import { useToast } from '@/hooks/useToast';
+import { Toast } from '@/components/ui/Toast';
+import { ErrorRetry } from '@/components/ui/ErrorRetry';
+import { FieldInput } from '@/components/ui/FieldInput';
 
-function penceToPounds(pence: number): string {
-  return (pence / 100).toFixed(2);
+function penceToPoundsDisplay(pence: number): string {
+  return penceToPounds(pence).toFixed(2);
 }
 
-function poundsToPence(pounds: string): number {
+function parsePoundsToPence(pounds: string): number {
   const val = parseFloat(pounds);
-  return isNaN(val) ? 0 : Math.round(val * 100);
+  return isNaN(val) ? 0 : poundsToPence(val);
 }
 
 export default function SettingsPage() {
@@ -17,10 +23,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-    type: 'success' | 'error';
-    message: string;
-  } | null>(null);
+  const [toast, setToast] = useToast();
 
   // Form state (strings for controlled inputs)
   const [aggressiveAbove, setAggressiveAbove] = useState('');
@@ -46,15 +49,15 @@ export default function SettingsPage() {
     setAggressiveAbove(s.aggressive_above.toString());
     setNormalAbove(s.normal_above.toString());
     setHoldAbove(s.hold_above.toString());
-    setCapAggressive(penceToPounds(s.cap_aggressive_gbp));
-    setCapNormal(penceToPounds(s.cap_normal_gbp));
-    setTotalSavings(penceToPounds(s.total_gbp_savings_pence));
+    setCapAggressive(penceToPoundsDisplay(s.cap_aggressive_gbp));
+    setCapNormal(penceToPoundsDisplay(s.cap_normal_gbp));
+    setTotalSavings(penceToPoundsDisplay(s.total_gbp_savings_pence));
     setMaxExposure(s.max_fx_exposure_pct.toString());
     setMonthlyExpenses(s.monthly_jpy_expenses.toString());
     setMonthlySalary(s.monthly_jpy_salary_net.toString());
     setNisaMonthly(s.nisa_monthly_jpy.toString());
     setNisaReturn(s.nisa_return_pct.toString());
-    setCircuitBreaker(penceToPounds(s.circuit_breaker_loss_pence));
+    setCircuitBreaker(penceToPoundsDisplay(s.circuit_breaker_loss_pence));
     setSafetyNetMonths(s.gbp_safety_net_months.toString());
     setScenarioBest(s.scenario_best_rate.toString());
     setScenarioBase(s.scenario_base_rate.toString());
@@ -84,13 +87,6 @@ export default function SettingsPage() {
     fetchSettings();
   }, [fetchSettings]);
 
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -100,15 +96,15 @@ export default function SettingsPage() {
         aggressive_above: parseFloat(aggressiveAbove),
         normal_above: parseFloat(normalAbove),
         hold_above: parseFloat(holdAbove),
-        cap_aggressive_gbp: poundsToPence(capAggressive),
-        cap_normal_gbp: poundsToPence(capNormal),
-        total_gbp_savings_pence: poundsToPence(totalSavings),
-        max_fx_exposure_pct: parseFloat(maxExposure),
+        cap_aggressive_gbp: parsePoundsToPence(capAggressive),
+        cap_normal_gbp: parsePoundsToPence(capNormal),
+        total_gbp_savings_pence: parsePoundsToPence(totalSavings),
+        max_fx_exposure_pct: parseInt(maxExposure, 10),
         monthly_jpy_expenses: parseInt(monthlyExpenses, 10),
         monthly_jpy_salary_net: parseInt(monthlySalary, 10),
         nisa_monthly_jpy: parseInt(nisaMonthly, 10),
         nisa_return_pct: parseFloat(nisaReturn),
-        circuit_breaker_loss_pence: poundsToPence(circuitBreaker),
+        circuit_breaker_loss_pence: parsePoundsToPence(circuitBreaker),
         gbp_safety_net_months: parseInt(safetyNetMonths, 10),
         scenario_best_rate: parseFloat(scenarioBest),
         scenario_base_rate: parseFloat(scenarioBase),
@@ -116,6 +112,13 @@ export default function SettingsPage() {
         review_interval_days: parseInt(reviewInterval, 10),
         last_band_review: lastReview || null,
       };
+
+      // Client-side validation before sending to server
+      const validation = settingsSchema.safeParse(body);
+      if (!validation.success) {
+        const firstIssue = validation.error.issues[0];
+        throw new Error(firstIssue?.message ?? 'Invalid settings values');
+      }
 
       const res = await fetch('/api/settings', {
         method: 'PUT',
@@ -146,20 +149,15 @@ export default function SettingsPage() {
 
   if (error && !settings) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="text-red-400 text-lg">Failed to load settings</div>
-        <p className="text-gray-500 text-sm">{error}</p>
-        <button
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            fetchSettings();
-          }}
-          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorRetry
+        title="Failed to load settings"
+        message={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+          fetchSettings();
+        }}
+      />
     );
   }
 
@@ -186,17 +184,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl border text-sm font-medium shadow-lg ${
-            toast.type === 'success'
-              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-              : 'bg-red-500/20 border-red-500/30 text-red-400'
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
+      {toast && <Toast toast={toast} />}
 
       <h1 className="text-2xl font-bold">Settings</h1>
 
@@ -204,6 +192,7 @@ export default function SettingsPage() {
         {/* Band Thresholds */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Band Thresholds</h2>
+          <p className="text-sm text-gray-500">GBP/JPY rate thresholds that determine the current strategy band. Rates above Aggressive trigger maximum buying; between Normal and Aggressive is standard buying; between Hold and Normal means wait; below Hold enters the reverse zone.</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <FieldInput
               label="Aggressive Buy Above"
@@ -211,6 +200,7 @@ export default function SettingsPage() {
               onChange={setAggressiveAbove}
               type="number"
               step="0.01"
+              hint="Default: 200"
             />
             <FieldInput
               label="Normal Buy Above"
@@ -218,6 +208,7 @@ export default function SettingsPage() {
               onChange={setNormalAbove}
               type="number"
               step="0.01"
+              hint="Default: 190"
             />
             <FieldInput
               label="Hold Above"
@@ -225,6 +216,7 @@ export default function SettingsPage() {
               onChange={setHoldAbove}
               type="number"
               step="0.01"
+              hint="Default: 175"
             />
           </div>
 
@@ -260,6 +252,7 @@ export default function SettingsPage() {
         {/* Monthly Caps */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Monthly Caps</h2>
+          <p className="text-sm text-gray-500">Maximum GBP to convert per month in each band. The aggressive cap applies when the rate is above the aggressive threshold; the normal cap applies otherwise.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FieldInput
               label="Aggressive Cap (GBP \u00a3)"
@@ -267,6 +260,7 @@ export default function SettingsPage() {
               onChange={setCapAggressive}
               type="number"
               step="0.01"
+              hint="Default: \u00a32,000"
             />
             <FieldInput
               label="Normal Cap (GBP \u00a3)"
@@ -274,6 +268,7 @@ export default function SettingsPage() {
               onChange={setCapNormal}
               type="number"
               step="0.01"
+              hint="Default: \u00a31,000"
             />
           </div>
         </section>
@@ -281,6 +276,7 @@ export default function SettingsPage() {
         {/* Personal Finance */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Personal Finance</h2>
+          <p className="text-sm text-gray-500">Your financial baseline used to calculate FX exposure limits and safety net requirements.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <FieldInput
               label="Total GBP Savings (\u00a3)"
@@ -288,13 +284,15 @@ export default function SettingsPage() {
               onChange={setTotalSavings}
               type="number"
               step="0.01"
+              hint="Default: \u00a350,000"
             />
             <FieldInput
               label="Max FX Exposure %"
               value={maxExposure}
               onChange={setMaxExposure}
               type="number"
-              step="0.1"
+              step="1"
+              hint="Default: 80%"
             />
             <FieldInput
               label="Monthly JPY Expenses (\u00a5)"
@@ -302,6 +300,7 @@ export default function SettingsPage() {
               onChange={setMonthlyExpenses}
               type="number"
               step="1"
+              hint="Default: \u00a5250,000"
             />
             <FieldInput
               label="Monthly JPY Salary (\u00a5)"
@@ -309,6 +308,7 @@ export default function SettingsPage() {
               onChange={setMonthlySalary}
               type="number"
               step="1"
+              hint="Default: \u00a5300,000"
             />
             <FieldInput
               label="NISA Monthly (\u00a5)"
@@ -316,6 +316,7 @@ export default function SettingsPage() {
               onChange={setNisaMonthly}
               type="number"
               step="1"
+              hint="Default: \u00a5100,000"
             />
             <FieldInput
               label="NISA Return %"
@@ -323,6 +324,7 @@ export default function SettingsPage() {
               onChange={setNisaReturn}
               type="number"
               step="0.1"
+              hint="Default: 5%"
             />
           </div>
         </section>
@@ -330,6 +332,7 @@ export default function SettingsPage() {
         {/* Risk Management */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Risk Management</h2>
+          <p className="text-sm text-gray-500">Pause conversions if unrealised losses exceed the circuit breaker threshold. Safety net ensures you keep enough GBP to cover this many months of living expenses.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FieldInput
               label="Circuit Breaker Loss (\u00a3)"
@@ -337,6 +340,7 @@ export default function SettingsPage() {
               onChange={setCircuitBreaker}
               type="number"
               step="0.01"
+              hint="Default: \u00a35,000"
             />
             <FieldInput
               label="GBP Safety Net (months)"
@@ -344,6 +348,7 @@ export default function SettingsPage() {
               onChange={setSafetyNetMonths}
               type="number"
               step="1"
+              hint="Default: 6"
             />
           </div>
         </section>
@@ -351,6 +356,7 @@ export default function SettingsPage() {
         {/* Scenarios */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Scenarios</h2>
+          <p className="text-sm text-gray-500">GBP/JPY rate assumptions used in scenario planning calculations.</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <FieldInput
               label="Best Case Rate"
@@ -358,6 +364,7 @@ export default function SettingsPage() {
               onChange={setScenarioBest}
               type="number"
               step="0.01"
+              hint="Default: 210"
             />
             <FieldInput
               label="Base Case Rate"
@@ -365,6 +372,7 @@ export default function SettingsPage() {
               onChange={setScenarioBase}
               type="number"
               step="0.01"
+              hint="Default: 190"
             />
             <FieldInput
               label="Worst Case Rate"
@@ -372,6 +380,7 @@ export default function SettingsPage() {
               onChange={setScenarioWorst}
               type="number"
               step="0.01"
+              hint="Default: 170"
             />
           </div>
         </section>
@@ -379,6 +388,7 @@ export default function SettingsPage() {
         {/* Review */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
           <h2 className="text-lg font-semibold">Review Schedule</h2>
+          <p className="text-sm text-gray-500">How often to review and potentially adjust band thresholds. The last review date tracks when thresholds were last evaluated.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FieldInput
               label="Review Interval (days)"
@@ -386,6 +396,7 @@ export default function SettingsPage() {
               onChange={setReviewInterval}
               type="number"
               step="1"
+              hint="Default: 90"
             />
             <FieldInput
               label="Last Review Date"
@@ -407,33 +418,6 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function FieldInput({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  step,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  step?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs text-gray-500">{label}</label>
-      <input
-        type={type}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-emerald-500 transition-colors"
-      />
     </div>
   );
 }

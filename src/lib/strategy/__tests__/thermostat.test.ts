@@ -106,16 +106,28 @@ describe('calculateThermostat', () => {
     expect(result.remainingBudget).toBe(200000);
   });
 
-  it('detects over-exposure and caps suggested amount', () => {
+  it('is not over-exposed at exactly the limit', () => {
     // £50k savings, 80% max = £40k max exposure
-    // Already converted £40k
+    // Already converted exactly £40k — at limit, not over
     const conversions = [
       mockConversion({ date: '2024-01-01', gbp_amount: 4000000 }), // £40k
     ];
     const result = calculateThermostat('AGGRESSIVE_BUY', mockSettings(), conversions, '2024-02');
 
-    expect(result.overExposed).toBe(true);
+    expect(result.overExposed).toBe(false);
     expect(result.exposurePct).toBe(80);
+    expect(result.suggestedAmount).toBe(0); // no exposure remaining
+  });
+
+  it('detects over-exposure when above the limit', () => {
+    // £50k savings, 80% max = £40k max exposure
+    // Already converted £40.1k — over limit
+    const conversions = [
+      mockConversion({ date: '2024-01-01', gbp_amount: 4010000 }), // £40.1k
+    ];
+    const result = calculateThermostat('AGGRESSIVE_BUY', mockSettings(), conversions, '2024-02');
+
+    expect(result.overExposed).toBe(true);
     expect(result.suggestedAmount).toBe(0);
     expect(result.suggestion).toContain('exposure');
   });
@@ -131,5 +143,37 @@ describe('calculateThermostat', () => {
     // Monthly cap = £2000, but exposure remaining = £1000
     expect(result.monthlyCap).toBe(200000); // £2000
     expect(result.suggestedAmount).toBe(100000); // min(£2000 remaining, £1000 exposure) = £1000
+  });
+
+  it('returns zero cap and reverse suggestion for REVERSE band', () => {
+    const result = calculateThermostat('REVERSE', mockSettings(), [], '2024-01');
+
+    expect(result.monthlyCap).toBe(0);
+    expect(result.remainingBudget).toBe(0);
+    expect(result.suggestedAmount).toBe(0);
+    expect(result.suggestion).toContain('Reverse zone');
+  });
+
+  it('does not count JPY_TO_GBP conversions in monthly total', () => {
+    const conversions = [
+      mockConversion({ date: '2024-01-10', direction: 'JPY_TO_GBP', gbp_amount: 50000 }),
+    ];
+    const result = calculateThermostat('AGGRESSIVE_BUY', mockSettings(), conversions, '2024-01');
+
+    expect(result.convertedThisMonth).toBe(0);
+    expect(result.remainingBudget).toBe(200000); // full cap still available
+  });
+
+  it('sums multiple conversions in the same month correctly', () => {
+    const conversions = [
+      mockConversion({ id: 1, date: '2024-01-05', gbp_amount: 50000 }),  // £500
+      mockConversion({ id: 2, date: '2024-01-15', gbp_amount: 30000 }),  // £300
+      mockConversion({ id: 3, date: '2024-01-25', gbp_amount: 20000 }),  // £200
+    ];
+    const result = calculateThermostat('AGGRESSIVE_BUY', mockSettings(), conversions, '2024-01');
+
+    expect(result.convertedThisMonth).toBe(100000); // £500 + £300 + £200 = £1000
+    expect(result.remainingBudget).toBe(100000);    // £2000 cap - £1000 = £1000
+    expect(result.atCap).toBe(false);
   });
 });
