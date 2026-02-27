@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Alert {
   id: number;
@@ -38,23 +38,23 @@ export default function AlertsBanner() {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const fetchAlerts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/alerts');
-      if (res.ok) {
-        const data = (await res.json()) as { alerts: Alert[] };
-        setAlerts(data.alerts);
-      }
-    } catch {
-      // silently fail - alerts are non-critical
-    }
-  }, []);
-
   useEffect(() => {
+    async function fetchAlerts() {
+      try {
+        const res = await fetch('/api/alerts');
+        if (res.ok) {
+          const data = (await res.json()) as { alerts: Alert[] };
+          setAlerts(data.alerts);
+        }
+      } catch {
+        // silently fail - alerts are non-critical
+      }
+    }
+
     fetchAlerts();
     const interval = setInterval(fetchAlerts, 60_000);
     return () => clearInterval(interval);
-  }, [fetchAlerts]);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

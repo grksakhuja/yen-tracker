@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ConversionRecord } from '@/types';
 import { formatGBP, formatJPY, formatRate, calculateEffectiveRate } from '@/lib/finance/currency';
 import { getBandBadgeClasses, getBandLabel } from '@/lib/strategy/bands';
+import Link from 'next/link';
 import { ErrorRetry } from '@/components/ui/ErrorRetry';
 
 function directionLabel(direction: string): string {
@@ -276,9 +277,9 @@ export default function ConversionsPage() {
           <p className="text-gray-500 text-lg">No conversions yet.</p>
           <p className="text-gray-600 text-sm mt-2">
             Log your first conversion on the{' '}
-            <a href="/" className="text-emerald-400 hover:underline">
+            <Link href="/" className="text-emerald-400 hover:underline">
               dashboard
-            </a>
+            </Link>
             .
           </p>
         </div>
