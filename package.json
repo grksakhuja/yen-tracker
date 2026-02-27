@@ -15,10 +15,14 @@
     "db:seed": "npx tsx src/lib/db/seed.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.1",
     "next": "^16.1.6",
+    "papaparse": "^5.5.3",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "recharts": "^3.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
@@ -27,14 +31,13 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "better-sqlite3": "^12.6.2",
+    "@vitest/coverage-v8": "^4.0.18",
     "drizzle-kit": "^0.31.9",
-    "papaparse": "^5.5.3",
+    "eslint": "^9.39.3",
+    "eslint-config-next": "^16.1.6",
     "postcss": "^8.5.6",
-    "recharts": "^3.7.0",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18",
-    "zod": "^4.3.6"
+    "vitest": "^4.0.18"
   }
 }
